@@ -1,77 +1,83 @@
 #include <core.p4>
 #include <v1model.p4>
 
-header ethernet_t {
-    macAddr_t dstAddr;
-    macAddr_t srcAddr;
-    bit<16>   etherType;
+header all_headers{
+	bit<464> all_bytes;
 }
-header ipv4_t {
-    bit<4>    version;
-    bit<4>    ihl;
-    bit<8>    diffserv;
-    bit<16>   totalLen;
-    bit<16>   identification;
-    bit<3>    flags;
-    bit<13>   fragOffset;
-    bit<8>    ttl;
-    bit<8>    protocol;
-    bit<16>   hdrChecksum;
-    ip4Addr_t srcAddr;
-    ip4Addr_t dstAddr;
+header metadata1{
+        bit<32> data;
 }
-header UDPheader{
-	bit<16> sourceportt
-	bit<16> destinationport
-	bit<16> length
-	bit<16> checksum
-}
-header int_shim {
-	bit<4> type
-	bit<2> NPT
-	bit<1> R1
-	bit<1> R2
-	bit<8> length
-	bit<16> Udp
-}
-header int_header {
-	bit<4> version
-	bit<1> D
-	bit<1> E
-	bit<1> M
-	bit<12> R
-	bit<5> hop
-	bit<8> remainingHopCount
-	bit<16> InstrBit
-	bit<16> DomSpec
-	bit<16> DSinstr
-}
+
 struct headers {
-	ethernet_t ethernet
-	ipv4_t     ip
-	UDPheader  udp
-	int_shim   shim
-	int_header int_header
+    all_headers   hder;
+    metadata1      meta;
 }
 
+struct metadata {
 
+    /* empty */
+
+}
 /* parser */
-parser MyParser(packet_in packet, headers hdr) {
+parser MyParser(packet_in packet, out headers hdr, inout metadata meta,  inout standard_metadata_t standard_metadata) {
 	state start{
-		transition parse_ethernet;
+		transition parse_headers;
 	}
-	state parse_ethernet {
-		packet.extract(hdr.ethernet);
-		transition select(hdr.ethernet.etherType) {
-			
-
-		}
+	state parse_headers {
+		packet.extract(hdr.hder);
+		transition accept;
 	}
-	
+}
 
-
-
+/* Checksum verification */
+control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
+    apply {  }
 }
 
 
 
+/* Ingress verification  */
+control MyIngress(inout headers hdr, inout metadata meta, inout standard_metadata_t standard_metadata){
+	action add_delta() {
+		hdr.meta.data  = 12;	
+	}
+	table adding_delta{
+		actions = {
+			add_delta;
+		}
+
+	}
+	apply {
+		adding_delta.apply();
+	}
+}
+
+/* Egress verification  */
+control MyEgress(inout headers hdr,
+                 inout metadata meta,
+                 inout standard_metadata_t standard_metadata) {
+    apply {  }
+}
+
+/* Checksum computation  */
+control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
+     apply {
+    }
+}
+
+/* Deparser  */
+control MyDeparser(packet_out packet, in headers hdr) {
+    apply {
+        packet.emit(hdr.hder);
+        packet.emit(hdr.meta);
+    }
+}
+/* SWITCH */
+V1Switch(
+MyParser(),
+MyVerifyChecksum(),
+MyIngress(),
+MyEgress(),
+MyComputeChecksum(),
+MyDeparser()
+) main;
