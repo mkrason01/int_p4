@@ -1,21 +1,17 @@
-/* -*- P4_16 -*- */
 #include <core.p4>
 #include <v1model.p4>
-const bit<16> TYPE_IPV4 = 0x800;
-const bit<8> TYPE_UDP = 0x11;
-/*************************************************************************
-*********************** H E A D E R S  ***********************************
-*************************************************************************/
-typedef bit<9>  egressSpec_t;
-typedef bit<48> macAddr_t;
-typedef bit<32> ip4Addr_t;
-header ethernet_t {
-    macAddr_t dstAddr;
-    macAddr_t srcAddr;
+
+//headers
+typedef bit<9>  egressPort;
+typedef bit<48> macAddres;
+typedef bit<32> ip4Addres;
+header Ethernet {
+    macAddres dstAddr;
+    macAddres srcAddr;
     bit<16>   etherType;
 }
 
-header ipv4_t {
+header ipv4 {
     bit<4>    version;
     bit<4>    ihl;
     bit<8>    diffserv;
@@ -25,92 +21,59 @@ header ipv4_t {
     bit<13>   fragOffset;
     bit<8>    ttl;
     bit<8>    protocol;
-    bit<16>   hdrChecksum;
-    ip4Addr_t srcAddr;
-    ip4Addr_t dstAddr;
+    bit<16>   headerChecksum;
+    ip4Addres srcAddr;
+    ip4Addres dstAddr;
     bit<64> UDP_H;
     bit<32> SHIM;
     bit<96> INT_HEADER;
     bit<32> INT_META;
+}
 
-}
-/* header udp {
-    bit<64> UDP_H;
-    bit<32> SHIM;
-    bit<96> INT_HEADER;
-}
-header metaf{
-    bit<32> data;
-} */
-struct metadata {
-    /* empty */
-}
- 
+struct metadata { }
+
 struct headers {
-    ethernet_t   ethernet;
-    ipv4_t       ipv4;
-   // udp          udp;
-   /*  metaf        metadata1; */
+    Ethernet   ethernet;
+    ipv4       IPh;
 }
- 
-/*************************************************************************
-********************** P A R S E R  ***********************************
-*************************************************************************/
- 
+
+//parser
 parser MyParser(packet_in packet,
-                out headers hdr,
+                out headers all_headers,
                 inout metadata meta,
                 inout standard_metadata_t standard_metadata) {
- 
     state start {
         transition parse_ethernet;
     }
- 
     state parse_ethernet {
-        packet.extract(hdr.ethernet);
-        transition select(hdr.ethernet.etherType) {
-            TYPE_IPV4: parse_ipv4;
+        packet.extract(all_headers.ethernet);
+        transition select(all_headers.ethernet.etherType) {
+            0x800: parse_ipv4;
             default: accept;
         }
     }
- 
     state parse_ipv4 {
-        packet.extract(hdr.ipv4);
+        packet.extract(all_headers.IPh);
 	transition accept;
-     /*   transition select(hdr.ipv4.protocol){
-		TYPE_UDP: parse_udp;
-		default: accept;
-*/	}
     }
-  //  state parse_udp {
-//	packet.extract(hdr.udp);
-//	transition accept;
-//    }
-//}
- 
-/*************************************************************************
-************   C H E C K S U M    V E R I F I C A T I O N   *************
-*************************************************************************/
- 
-control MyVerifyChecksum(inout headers hdr, inout metadata meta) {  
+}
+
+//Checksum verification
+control MyVerifyChecksum(inout headers all_headers, inout metadata meta) {  
     apply {  }
 }
- 
- 
-/*************************************************************************
-**************  I N G R E S S   P R O C E S S I N G   *******************
-*************************************************************************/
- 
-control MyIngress(inout headers hdr,
+
+//ingress processing
+control MyIngress(inout headers all_headers,
                   inout metadata meta,
                   inout standard_metadata_t standard_metadata) {
     action drop() {
         mark_to_drop();
     }
-    action add_delta() {
-                hdr.ipv4.INT_META  = 15;
-        }
-    action forward(egressSpec_t port) {
+    //action add_delta() {
+    //            all_headers.IPh.INT_META  = 15;
+    //    }
+    action forward(egressPort port) {
         standard_metadata.egress_spec = port;
     }
     table phy_forward {
@@ -119,8 +82,8 @@ control MyIngress(inout headers hdr,
         }
         actions = {
             forward;
-            add_delta;
-	    drop;
+        //  add_delta;
+	        drop;
         }
         size = 1024;
         default_action = drop();
@@ -130,63 +93,50 @@ control MyIngress(inout headers hdr,
         phy_forward.apply();
     }
 }
- 
-/*************************************************************************
-****************  E G R E S S   P R O C E S S I N G   *******************
-*************************************************************************/
- 
-control MyEgress(inout headers hdr,
+
+//egress processing
+control MyEgress(inout headers all_headers,
                  inout metadata meta,
                  inout standard_metadata_t standard_metadata) {
         apply { 
  }
 }
- 
-/*************************************************************************
-*************   C H E C K S U M    C O M P U T A T I O N   **************
-*************************************************************************/
- 
-control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
+
+//checksum computation
+control MyComputeChecksum(inout headers  all_headers, inout metadata meta) {
      apply {
         update_checksum(
-            hdr.ipv4.isValid(),
-            { hdr.ipv4.version,
-              hdr.ipv4.ihl,
-              hdr.ipv4.diffserv,
-              hdr.ipv4.totalLen,
-              hdr.ipv4.identification,
-              hdr.ipv4.flags,
-              hdr.ipv4.fragOffset,
-              hdr.ipv4.ttl,
-              hdr.ipv4.protocol,
-              hdr.ipv4.srcAddr,
-              hdr.ipv4.dstAddr },
-            hdr.ipv4.hdrChecksum,
+            all_headers.IPh.isValid(),
+            { all_headers.IPh.version,
+              all_headers.IPh.ihl,
+              all_headers.IPh.diffserv,
+              all_headers.IPh.totalLen,
+              all_headers.IPh.identification,
+              all_headers.IPh.flags,
+              all_headers.IPh.fragOffset,
+              all_headers.IPh.ttl,
+              all_headers.IPh.protocol,
+              all_headers.IPh.srcAddr,
+              all_headers.IPh.dstAddr },
+            all_headers.IPh.headerChecksum,
             HashAlgorithm.csum16);
     }
 }
- 
-/*************************************************************************
-***********************  D E P A R S E R  *******************************
-*************************************************************************/
- 
-control MyDeparser(packet_out packet, in headers hdr) {
+
+//Deparser
+control MyDeparser(packet_out packet, in headers all_headers) {
     apply {
-        packet.emit(hdr.ethernet);
-        packet.emit(hdr.ipv4);
+        packet.emit(all_headers.ethernet);
+        packet.emit(all_headers.IPh);
     }
 }
- 
-/*************************************************************************
-***********************  S W I T C H  *******************************
-*************************************************************************/
- 
-V1Switch(
-MyParser(),
-MyVerifyChecksum(),
-MyIngress(),
-MyEgress(),
-MyComputeChecksum(),
-MyDeparser()
 
+//Combining everything together
+V1Switch(
+    MyParser(),
+    MyVerifyChecksum(),
+    MyIngress(),
+    MyEgress(),
+    MyComputeChecksum(),
+    MyDeparser()
 ) main;
